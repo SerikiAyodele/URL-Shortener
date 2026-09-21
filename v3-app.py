@@ -13,15 +13,19 @@ def shorten():
 
     # 1a. reject the request if the url field is missing
     if "url" in data:
-        code = secrets.token_urlsafe(4)
-
+        
         #open a connection
         conn = sqlite3.connect("links.db")
 
-        conn.execute("INSERT INTO links VALUES (?, ?)", (code, data["url"]))
-        conn.commit()
+        while True:
+            code = secrets.token_urlsafe(4)
+            try:
+                conn.execute("INSERT INTO links VALUES (?, ?)", (code, data["url"]))
+                conn.commit()
+                break
+            except sqlite3.IntegrityError:
+                pass
         conn.close()
-
         return code
     else:
         abort(400)
@@ -40,3 +44,7 @@ def get_code(code):
         row = row[0]
         return redirect(row)
         
+
+@app.route("/ping")
+def ping():
+    return "ok"

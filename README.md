@@ -65,3 +65,52 @@ Frame work: Flask
     *soln: persistence. Move links out of memory and into a database*
 
     ## Designing the DB
+
+2. Requests reading from disk all the time 
+   *soln: cacahe*
+   Load testing with apache bench without a cache
+   `ab -n 1000 -c 10 http://127.0.0.1:5001/YOURCODE`
+
+   #### result
+   ```
+   816 requests/sec
+   p50   12 ms
+   p99   16 ms
+   max   19 ms
+   ```
+   ---
+
+Now the useful question: what is taking 12ms?
+
+Two candidates:
+
+- SQLite. Opening a connection and reading from disk on every request.
+- Flask's dev server. The thing that prints a warning about not being for production.
+
+You are about to add a cache to speed up the database part. But if the database is not the slow part, the cache will change nothing.
+
+---
+
+So isolate it first.
+
+Add a route back that does no database work at all. Something like /ping that just returns the word "ok".
+
+Then run the same ab against it.
+
+If /ping also gives around 816/s, the database is not your bottleneck. Flask is. A cache would be pointless.
+
+If /ping is much faster, the database really is costing you, and a cache is worth adding.
+
+Measure before you optimise. Write the route and run it.
+
+              req/sec    p50    p99    server think time
+/ping           856      12ms   13ms   0ms
+/<code>         817      12ms   16ms   1ms
+
+The difference is about 4%.
+
+---
+
+What that tells us:
+
+SQLite is not the bottleneck. Adding a cache would buy us at most 4%, and probably less.
