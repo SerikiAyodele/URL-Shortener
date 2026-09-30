@@ -1,12 +1,14 @@
 URL Shortener
+
 =============
 
 Stack
+
 -----
 
-*   Language: python
-*   Frame work: Flask 
-*   Database: MySQL
+* Language: python
+* Frame work: Flask 
+* Database: MySQL
 
 Terminologies
 -------------
