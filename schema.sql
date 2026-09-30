@@ -1,0 +1,1 @@
+CREATE TABLE links (code TEXT PRIMARY KEY, long_url TEXT NOT NULL);
