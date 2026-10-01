@@ -1,21 +1,15 @@
 URL Shortener
-
 =============
 
 Stack
-
 -----
-
 * Language: python
 * Frame work: Flask 
 * Database: MySQL
 
 Terminologies
 -------------
-
-*   Virtual environmnet: Think of it like a container but for only python libraries
-
-
+* Virtual environmnet: Think of it like a container but for only python libraries
 
 Try it out
 ==========
@@ -166,6 +160,82 @@ Problems with v2 (v2-app.py)
 
     Rule: fix the biggest bottleneck and the next one becomes visible.
 
+Problems with v3 (v3-app.py)
+==============================
+*   SQLite cannot be shared across machines. This becomes a problem when we want to scale 
+    Moving from sqlite to postgres
+    But what will this new setup cost us
+
+    ```
+    /ping       7855 req/sec    1.27 ms
+    /<code>      825 req/sec   12.13 ms
+    ```
+
+    The database now costs 10.9ms, about 90% of the request.
+    With SQLite it was 0.22ms. Same query, same logic. 50 times more expensive.
+    
+    Now the same question as before: what exactly is costing 10.9ms?
+
+    Two candidates:
+    ---------------
+    *   The query itself. A primary key lookup on a table with a handful of rows.
+    *   Opening the connection. Every request does a full TCP handshake plus Postgres authenticating you, then throws the connection away.
+
+    Looking at my v4 code: `psycopg.connect(...)` sits inside the function. Open, query, close. A thousand times.
+
+    So before adding a cache, i will test the cheaper fix: a connection pool.
+    Term: a pool keeps a few connections open permanently and lends them out. My function borrows one, uses it, gives it back. No handshake, no authentication.
+
+    If pooling drops me from 12ms to around 2ms, connection setup was the problem and i still do not need a cache.
+
+    Why that is expensive.
+    ----------------------
+
+    Opening a Postgres connection is not one step:
+
+    1  TCP handshake, messages back and forth
+    2  Postgres checks my username and password
+    3  it sets up a session for me
+
+    Then I run one tiny query and throw all of that away.
+
+    What a pool changes:
+    -------------------
+
+    *   The connections get opened once, when the app starts.
+
+    *   My function borrows one that is already open, uses it, gives it back.
+
+    *   No handshake, no password check. The 10ms disappears.
+
+    Same lesson as last time. Find the real cause before reaching for the obvious tool.
+
+    Hypothesis result
+    -----------------
+    ```
+                    req/sec    per request
+    before pool     825        12.13 ms
+    after pool      3759       2.66 ms
+    ```
+    4.6x faster. Connection setup was about 10ms of that 12ms. The query was never the problem.
+
+    And it cost me nothing. No new service, no new infrastructure. I moved one line out of a function.
+
+    Where I stand now:
+
+    ```
+    /ping              1.27 ms
+    /<code>            2.66 ms
+    database cost      1.39 ms   (52% of the request)
+    ```
+
+    Now the cache question is genuinely live.
+
+    The database is 52% of my request. A cache could remove most of it, so roughly 2x.
+
+    But a cache means Redis: another service to run, another thing to fail, more code.
+
+    I will be adding it to learn the pattern, not because the numbers demand it.
 
 
 Communication and Support
