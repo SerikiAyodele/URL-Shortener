@@ -13,8 +13,7 @@ Terminologies
 
 Try it out
 ==========
-
-[X] 1. Install Flask in a virtual environmnet, it keeps your        projects packages separate from your system
+1. Install Flask in a virtual environmnet, it keeps your        projects packages separate from your system
     ```
     `python3 -m venv .venv`
     `source .venv/bin/activate`
