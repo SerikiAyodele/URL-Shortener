@@ -40,14 +40,19 @@ def shorten():
 
 @app.route("/<code>")
 def get_code(code):
-    with pool.connection() as conn:
-        row = conn.execute("SELECT long_url FROM links WHERE code = %s", (code,)).fetchone()
+    hit = cache.get(code)
+    if hit is None:
+        with pool.connection() as conn:
+            row = conn.execute("SELECT long_url FROM links WHERE code = %s", (code,)).fetchone()
 
-    if row is None:
-        return abort(404)
+        if row is None:
+            return abort(404)
+        else:
+            row = row[0]
+            cache.set(code, row, ex=3600)
+            return redirect(row)
     else:
-        row = row[0]
-        return redirect(row)
+        return redirect(hit)
         
 
 @app.route("/ping")
