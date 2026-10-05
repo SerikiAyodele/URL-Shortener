@@ -209,3 +209,7 @@ Still to do
 * Run two instances behind a load balancer
 * Compare code generation strategies: random, hash, counter
 * Cache invalidation, once links can be deleted
+
+
+Running Multiple Instances of the app
+=====================================
