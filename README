@@ -213,3 +213,38 @@ Still to do
 
 Running Multiple Instances of the app
 =====================================
+No app code changed. This is all infrastructure.
+
+Problem: docker compose up --scale app=3 fails.
+
+       Bind for 0.0.0.0:5001 failed: port is already allocated
+
+Three containers, one host port. Only one program can hold a port.
+
+Publishing three different ports would "work", but a short link is a URL
+with one host. Whoever creates the link picks an address once, and every
+click lands on that same copy. The thing choosing has to choose per
+request, not once.
+
+Fix: stop publishing the app's port, put nginx in front on 8080.
+
+       :8080 nginx ──> app-1, app-2, app-3
+
+Docker's DNS returns all three container IPs in rotating order, so the
+balancing is Docker's, not nginx's.
+
+Gotcha: nginx resolves an upstream name once at startup and caches it
+forever. A variable forces resolution per request.
+
+       set $backend http://app:5001;
+       proxy_pass $backend;
+
+12 requests, spread 3 / 3 / 6. Uneven because DNS round robin is
+approximate.
+
+What broke: nothing. State moved to Postgres in v3, so all three copies
+see the same data. The v1 dict would have 404'd every redirect that
+landed on a different copy than the one that created it.
+
+What changed: the app now sees nginx's IP, not the client's. Click
+analytics by country would report one country. Fix is X-Forwarded-For.
