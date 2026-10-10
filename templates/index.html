@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>snip</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Nunito:wght@400;600;700&display=swap">
+
+<style>
+:root {
+  --bg:        #fff5f8;
+  --blob-a:    #ffc9dd;
+  --blob-b:    #ffe0b8;
+  --card:      #ffffff;
+  --fg:        #3d2231;
+  --muted:     #96728a;
+  --line:      #f6d9e4;
+  --pink:      #e8468a;
+  --pink-dark: #c9306f;
+  --pink-soft: #ffeaf2;
+  --good:      #1f9d7a;
+  --bad:       #d63a5e;
+
+  --display: "Fraunces", Georgia, serif;
+  --body:    "Nunito", -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #1d1017;
+    --blob-a:    #5c2340;
+    --blob-b:    #4a2a1c;
+    --card:      #2a1a23;
+    --fg:        #ffeaf2;
+    --muted:     #c79ab4;
+    --line:      #44293600;
+    --line:      #432936;
+    --pink:      #ff85b8;
+    --pink-dark: #ff5fa3;
+    --pink-soft: #3b202c;
+    --good:      #5fd9b4;
+    --bad:       #ff8098;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.6;
+  display: grid;
+  place-items: center;
+  padding: 24px 20px;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- ambient blobs ---------- */
+
+.blob {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.blob.one {
+  width: 340px; height: 340px;
+  background: var(--blob-a);
+  top: -90px; left: -90px;
+  animation: drift-a 18s ease-in-out infinite;
+}
+
+.blob.two {
+  width: 300px; height: 300px;
+  background: var(--blob-b);
+  bottom: -100px; right: -70px;
+  animation: drift-b 22s ease-in-out infinite;
+}
+
+@keyframes drift-a {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(50px, 60px) scale(1.12); }
+}
+
+@keyframes drift-b {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-60px, -40px) scale(1.08); }
+}
+
+/* ---------- card ---------- */
+
+main {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 30rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 36px 30px 32px;
+  box-shadow: 0 20px 50px -22px rgba(232, 70, 138, 0.38);
+  animation: card-in 0.6s cubic-bezier(0.34, 1.4, 0.5, 1) both;
+}
+
+@keyframes card-in {
+  from { opacity: 0.4; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1;   transform: none; }
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--pink);
+  margin-bottom: 18px;
+}
+
+.mark svg { display: block; }
+.mark svg { animation: snip 4.5s ease-in-out infinite; transform-origin: 4px 12px; }
+
+@keyframes snip {
+  0%, 88%, 100% { transform: rotate(0deg); }
+  92%           { transform: rotate(-14deg); }
+  96%           { transform: rotate(0deg); }
+}
+
+h1 {
+  font-family: var(--display);
+  font-size: clamp(1.9rem, 7vw, 2.4rem);
+  font-weight: 600;
+  line-height: 1.12;
+  margin: 0 0 8px;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+h1 em { font-style: normal; color: var(--pink); }
+
+.sub {
+  color: var(--muted);
+  margin: 0 0 26px;
+  font-size: 0.97rem;
+}
+
+/* ---------- form ---------- */
+
+form { display: flex; flex-direction: column; gap: 12px; }
+
+label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input[type="url"] {
+  width: 100%;
+  font: inherit;
+  color: var(--fg);
+  background: var(--pink-soft);
+  border: 2px solid transparent;
+  border-radius: 16px;
+  padding: 14px 16px;
+  transition: border-color 0.18s, background 0.18s, transform 0.18s;
+}
+
+input[type="url"]::placeholder { color: var(--muted); opacity: 0.75; }
+
+input[type="url"]:focus {
+  outline: none;
+  border-color: var(--pink);
+  background: var(--card);
+  transform: translateY(-1px);
+}
+
+button.go {
+  font: inherit;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #fff;
+  background: var(--pink);
+  border: none;
+  border-radius: 16px;
+  padding: 14px 18px;
+  cursor: pointer;
+  transition: transform 0.16s cubic-bezier(0.34, 1.5, 0.5, 1), background 0.16s, box-shadow 0.16s;
+  box-shadow: 0 8px 18px -8px var(--pink);
+}
+
+button.go:hover:not(:disabled) {
+  background: var(--pink-dark);
+  transform: translateY(-2px) scale(1.015);
+  box-shadow: 0 12px 22px -8px var(--pink);
+}
+
+button.go:active:not(:disabled) { transform: translateY(0) scale(0.97); }
+
+button.go:disabled { opacity: 0.6; cursor: wait; }
+
+button.go .spin {
+  display: none;
+  width: 15px; height: 15px;
+  border: 2.5px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: -2px;
+  margin-right: 8px;
+}
+
+body.busy button.go .spin { display: inline-block; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+:focus-visible { outline: 3px solid var(--pink); outline-offset: 3px; }
+
+/* ---------- result ---------- */
+
+.result {
+  margin-top: 22px;
+  padding: 18px;
+  border-radius: 18px;
+  background: var(--pink-soft);
+  border: 1px dashed var(--pink);
+  animation: pop-in 0.45s cubic-bezier(0.34, 1.6, 0.5, 1) both;
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to   { opacity: 1; transform: none; }
+}
+
+.result .cap {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.result .link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.result a {
+  font-family: var(--display);
+  font-size: 1.22rem;
+  font-weight: 700;
+  color: var(--pink);
+  text-decoration: none;
+  word-break: break-all;
+  min-width: 0;
+  flex: 1;
+}
+
+.result a:hover { text-decoration: underline; }
+
+button.copy {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--pink);
+  background: var(--card);
+  border: 2px solid var(--pink);
+  border-radius: 11px;
+  padding: 7px 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s, background 0.15s, color 0.15s;
+}
+
+button.copy:hover { transform: scale(1.06); }
+button.copy:active { transform: scale(0.94); }
+
+button.copy.done {
+  background: var(--good);
+  border-color: var(--good);
+  color: #fff;
+}
+
+.error {
+  margin-top: 18px;
+  padding: 13px 16px;
+  border-radius: 14px;
+  background: var(--pink-soft);
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  font-weight: 600;
+  font-size: 0.92rem;
+  animation: shake 0.42s ease;
+}
+
+@keyframes shake {
+  0%, 100%      { transform: translateX(0); }
+  20%, 60%      { transform: translateX(-7px); }
+  40%, 80%      { transform: translateX(7px); }
+}
+
+/* ---------- hearts ---------- */
+
+.heart {
+  position: fixed;
+  z-index: 2;
+  font-size: 1.1rem;
+  pointer-events: none;
+  animation: float-up 1.5s ease-out forwards;
+}
+
+@keyframes float-up {
+  0%   { opacity: 1; transform: translateY(0) scale(0.6) rotate(0deg); }
+  100% { opacity: 0; transform: translateY(-120px) scale(1.25) rotate(22deg); }
+}
+
+footer {
+  margin-top: 24px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="blob one"></div>
+<div class="blob two"></div>
+
+<main>
+  <div class="mark">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="6" cy="6" r="3"/>
+      <circle cx="6" cy="18" r="3"/>
+      <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+      <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+      <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+    </svg>
+    snip
+  </div>
+
+  <h1>Long link in,<br><em>tiny link out.</em></h1>
+  <p class="sub">Paste anything. Get something you can actually text to a person.</p>
+
+  <form id="form" autocomplete="off">
+    <label for="url">Your long URL</label>
+    <input
+      id="url"
+      name="url"
+      type="url"
+      placeholder="https://example.com/a/very/long/path?with=params"
+      required>
+    <button class="go" id="go" type="submit">
+      <span class="spin" aria-hidden="true"></span>
+      <span id="go-text">Shorten it</span>
+    </button>
+  </form>
+
+  <div id="out" aria-live="polite"></div>
+
+  <footer>Links are kept until you delete them.</footer>
+</main>
+
+<script>
+const form   = document.getElementById('form');
+const input  = document.getElementById('url');
+const go     = document.getElementById('go');
+const goText = document.getElementById('go-text');
+const out    = document.getElementById('out');
+
+function hearts(x, y) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const chars = ['💖', '✨', '💕', '🌸'];
+  for (let i = 0; i < 6; i++) {
+    const h = document.createElement('div');
+    h.className = 'heart';
+    h.textContent = chars[i % chars.length];
+    h.style.left = (x + (Math.random() * 90 - 45)) + 'px';
+    h.style.top  = (y + (Math.random() * 20 - 10)) + 'px';
+    h.style.animationDelay = (i * 0.07) + 's';
+    document.body.appendChild(h);
+    setTimeout(() => h.remove(), 1800);
+  }
+}
+
+function showError(msg) {
+  out.innerHTML = '';
+  const box = document.createElement('div');
+  box.className = 'error';
+  box.textContent = msg;
+  out.appendChild(box);
+}
+
+function showResult(code) {
+  const url = location.origin + '/' + code;
+
+  out.innerHTML = '';
+
+  const box = document.createElement('div');
+  box.className = 'result';
+
+  const cap = document.createElement('div');
+  cap.className = 'cap';
+  cap.textContent = 'Here you go';
+
+  const row = document.createElement('div');
+  row.className = 'link-row';
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.textContent = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+
+  const copy = document.createElement('button');
+  copy.className = 'copy';
+  copy.type = 'button';
+  copy.textContent = 'Copy';
+
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const r = document.createRange();
+      r.selectNodeContents(a);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    copy.textContent = 'Copied!';
+    copy.classList.add('done');
+    setTimeout(() => {
+      copy.textContent = 'Copy';
+      copy.classList.remove('done');
+    }, 1600);
+  });
+
+  row.append(a, copy);
+  box.append(cap, row);
+  out.appendChild(box);
+
+  const r = box.getBoundingClientRect();
+  hearts(r.left + r.width / 2, r.top + r.height / 2);
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const value = input.value.trim();
+  if (!value) return;
+
+  document.body.classList.add('busy');
+  go.disabled = true;
+  goText.textContent = 'Snipping';
+
+  try {
+    const res = await fetch('/shorten', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ url: value })
+    });
+
+    if (res.status === 400) {
+      showError('That does not look like a URL I can shorten.');
+    } else if (!res.ok) {
+      showError('Something broke on my end. Status ' + res.status + '.');
+    } else {
+      const code = (await res.text()).trim();
+      showResult(code);
+      input.value = '';
+    }
+  } catch {
+    showError('Could not reach the server. Is it running?');
+  } finally {
+    document.body.classList.remove('busy');
+    go.disabled = false;
+    goText.textContent = 'Shorten it';
+  }
+});
+</script>
+
+</body>
+</html>

@@ -3,213 +3,155 @@ URL Shortener
 
 Takes a long URL, returns a short code. Visit the code, get redirected.
 
-Built to learn system design. Each version fixes one problem found by
-measuring, not by guessing. The build log below is the actual point of
-this repo.
+Built to learn system design. Every change below fixes a problem found by
+measuring, not guessing. The build log is the point of this repo.
 
-Stack
------
-
-* Language: Python
-* Framework: Flask, served by gunicorn
-* Database: PostgreSQL 17
-* Cache: Redis 7
-* Infrastructure: Docker Compose
+Python, Flask, gunicorn, PostgreSQL 17, Redis 7, nginx, Docker Compose.
 
 Run it
 ------
 
-1. Start the services:
+    cp .env.example .env            # then set your own values
+    docker compose up -d --build --scale app=3
+    docker compose exec -T postgres psql -U mia -d links < schema.sql
 
-       docker compose up -d
+UI at http://127.0.0.1:8080. Or POST JSON to /shorten with a "url" field.
 
-2. Create the schema:
-
-       docker compose exec -T postgres psql -U mia -d links < schema.sql
-
-3. Install and run:
-
-       python3 -m venv .venv
-       source .venv/bin/activate
-       pip install -r requirements.txt
-       gunicorn -w 4 'v4-app:app' -b 127.0.0.1:5001 --reload
-
-4. Use it:
-
-       curl -X POST http://127.0.0.1:5001/shorte
-         -H "Content-Type: application/json" \
-         -d '{"url": "https://example.com"}'
-
-Copy .env.example to .env and set your own value
-
-
-Build log
-=========
-
-v1: it works, in memory
------------------------
+v1: in memory
+-------------
 
 Two endpoints, a Python dict, no database.
 
-Problem: codes could collide. token_urlsafe(4) gives 4 bytes, so
-2^32 = 4,294,967,296 possible codes. With 10 mil
+Problem: codes collide. token_urlsafe(4) gives 2^32 = 4.29 billion codes. At
+10 million links that is 0.23% each, so ~23,000 links silently pointing at
+the wrong site, with no error.
 
-       10,000,000 / 4,294,967,296  = 0.23% chanc
-       0.23% x 10,000,000          = ~23,000 collisions
+Longer codes only reduce the odds. Checking gives a guarantee, and writes are
+rare, so paying on the write path is cheap.
 
-23,000 links silently pointing at the wrong site, with no error.
-
-Two options: check before storing, or use longer codes. Longer codes only
-reduce the odds. Checking gives a guarantee, and
-paying on the write path is cheap.
-
-Fix: retry on collision. The primary key enforces uniqueness, so the
-database does the checking.
-
+Fix: retry on collision. The primary key does the checking.
 
 v2: it survives a restart
 -------------------------
 
-Problem: the dict died every time the server res
+Problem: the dict died on every restart.
 
-Fix: SQLite. Code is the primary key, because ev
-a code and needs the URL, never the reverse. Long URLs are not unique and
-must not be.
+Fix: SQLite. Code is the primary key, because every redirect arrives with a
+code and needs the URL, never the reverse. Long URLs are not unique and must
+not be: two people shortening google.com need different codes.
 
-Then: was the disk read slow enough to need a ca
+Then: is the disk read slow enough to need a cache? Isolated it with /ping, a
+route touching no database. 856 req/sec against 817. Four percent apart, so
+SQLite was not the bottleneck. The dev server was.
 
-Isolated it by adding /ping, a route that touche
+Fix: gunicorn, 4 workers. 817 to 6670 req/sec, not one line of app.py changed.
+WSGI is a standard interface, so servers swap freely.
 
-                   req/sec    p50
-       /ping          856     12ms
-       /<code>        817     12ms
-
-4% apart. SQLite was not the bottleneck. The dev
-
-Fix: gunicorn with 4 workers.
-
-                   req/sec    per request
-       /ping         7837     1.28ms
-       /<code>       6670     1.50ms
-
-9x faster. Not one line of app.py changed. WSGI
-so servers swap freely.
-
-Cache decision: no. The database now cost 0.22ms, about 15% of the
-request. Not worth another service to run and ke
-
+Cache decision: no. The database cost 0.22ms of a 1.50ms request.
 
 v3: it can run on more than one machine
 ---------------------------------------
 
-Problem: SQLite coordinates writers with operati
-works when every process asks the same operating system. Put the file on a
-network share and two machines each believe they
-write. The file corrupts, silently.
+Problem: SQLite coordinates writers with operating system file locks, which
+only works while every process asks the same operating system. On a network
+share, two machines each believe they hold the lock. Both write. The file
+corrupts, silently.
 
-       SQLite     many processes, one machine
-       Postgres   many processes, many machines
+    SQLite     many processes, one machine
+    Postgres   many processes, many machines
 
-Fix: Postgres. Four changes total, the SQL was u
+Fix: Postgres. Four changes, the SQL unchanged.
 
-       sqlite3.connect("links.db")  ->  psycopg.
-       ?                            ->  %s
-       sqlite3.IntegrityError       ->  psycopg.
+    sqlite3.connect("links.db")  ->  psycopg.connect(DATABASE_URL)
+    ?                            ->  %s
+    sqlite3.IntegrityError       ->  psycopg.errors.UniqueViolation
 
-Cost of the move:
+Cost: the database went from 0.22ms to 10.9ms. Fifty times more, same query.
 
-                   req/sec    per request
-       /ping         7855     1.27ms
-       /<code>        825    12.13ms
+The query or the connection? psycopg.connect() sat inside the function, so
+every request paid a TCP handshake plus authentication for a 1ms query.
 
-The database went from 0.22ms to 10.9ms. 50 time
-query, same logic.
-
-Same question as before: the query, or the connection? psycopg.connect()
-was inside the function, so every request paid a
-authentication to run one 1ms query.
-
-Fix: a connection pool. Connections open once at startup and get lent out.
-
-                   req/sec    per request
-       before        825     12.13ms
-       after        3759      2.66ms
-
-4.6x faster, for moving one line out of a function. No new service.
-
+Fix: a connection pool, opened once at startup. 825 to 3759 req/sec for moving
+one line out of a function. No new service.
 
 v4: the cache
 -------------
 
-The database was now 1.39ms of a 2.66ms request. 52%. Added Redis to
-learn the pattern, not because the numbers deman
+The database was now 1.39ms of a 2.66ms request. Added Redis to learn the
+pattern, not because the numbers demanded it.
 
-Cache-aside: check Redis, on a miss query Postgr
-The cache knows nothing about the database. The app does the work.
+Cache-aside: check Redis, on a miss query Postgres and store the answer. The
+cache knows nothing about the database. The app does the work.
 
-                                      req/sec    per req
-       postgres + pool                  3759
-       postgres + pool + redis          5386      1.9ms
+3759 to 5386 req/sec. 43%, not the 2x expected. Redis is also a separate
+process reached over TCP, so a Postgres trip became a shorter Redis one. A
+cache gives a shorter trip, not memory speed.
 
-43% faster, not the 2x expected. Redis is also a separate process reached
-over TCP. A 1.39ms Postgres round trip became a
-Cheaper, not free. A cache gives you a shorter trip, not memory speed.
+Caveat: ab hits one URL repeatedly, so that was a 100% hit rate. A miss is
+slower than no cache, since it checks Redis and still goes to Postgres.
 
-Caveat: ab hits one URL repeatedly, so this was a 100% hit rate. Real
-traffic spreads across thousands of links, and a
-before, because it checks Redis first and still goes to Postgres. 43% is
-the ceiling, not the average.
+Entries expire after an hour. That bounds staleness. It is not deletion.
 
-Entries expire after an hour. That is a backstop
-how long a stale entry can live. It is not deletion. If a delete endpoint
-is added, the key must be removed from Redis at
+v5: more than one copy
+----------------------
 
+No app code changed. All infrastructure.
+
+Problem: --scale app=3 fails. Three containers, one host port.
+
+    Bind for 0.0.0.0:5001 failed: port is already allocated
+
+Publishing three ports would "work", but a short link is a URL with one host.
+Whoever creates the link picks an address once, and every click lands on that
+copy. The thing choosing has to choose per request, not once.
+
+Fix: stop publishing the app's port, put nginx in front on 8080. Docker's DNS
+returns all three IPs in rotating order, so the balancing is Docker's.
+
+Gotcha: nginx resolves an upstream name once at startup and caches it forever.
+A variable forces resolution per request.
+
+    set $backend http://app:5001;
+    proxy_pass $backend;
+
+12 requests spread 3 / 3 / 6. DNS round robin is approximate.
+
+What broke: nothing. State moved to Postgres in v3, so all three copies agree.
+The v1 dict would have 404'd every redirect landing on a different copy.
+
+What changed: the app sees nginx's IP, not the client's. Click analytics by
+country would report one country. The fix is X-Forwarded-For.
 
 Results
 =======
 
-Every number from ab -n 1000 -c 10, on one lapto
+ab -n 1000 -c 10, one laptop.
 
-                                      req/sec
-       dev server + sqlite                817     12.2ms
-       gunicorn + sqlite                 6670
-       gunicorn + postgres                825     12.1ms
-       gunicorn + postgres + pool        3759
-       gunicorn + postgres + pool + redis 5386     1.9ms
-       /ping, the floor                  7855
-
+                                       req/sec    per req
+    dev server + sqlite                    817     12.20ms
+    gunicorn + sqlite                     6670      1.50ms
+    gunicorn + postgres                    825     12.13ms
+    gunicorn + postgres + pool            3759      2.66ms
+    gunicorn + postgres + pool + redis    5386      1.90ms
+    /ping, the floor                      7855      1.27ms
 
 What this taught me
 ===================
 
-* Measure before optimising. Twice I was sure th
-  Twice it was not. The first fix was one word in the start command, the
-  second was moving one line out of a function.
-
-* To find the cost of something, add a route tha
-  measure the gap.
-
-* Slow is relative to what the work requires, not to a second. 150ms
-  across continents is fine. 11ms to return "ok"
-
-* Watch p99, not the average. The average hides
-
-* Fix the biggest bottleneck and the next one be
-  always there, just hidden.
-
+* Measure before optimising. Twice I was sure the database was slow. Twice it
+  was not. One fix was a word in a command, the other moved one line.
+* To price something, add a route that does none of it and measure the gap.
+* Slow is relative to the work, not to a second. 150ms across continents is
+  fine. 11ms to return "ok" locally is not.
+* Watch p99. The average hides your worst users.
+* Fix the biggest bottleneck and the next becomes visible. Always was there.
 * A cache is a decision with a price, not a default.
-
-* Check Non-2xx responses before believing any load test. ab reports
-  "Failed requests: 0" for a thousand consecutiv
-
+* Whatever all your copies must share becomes your ceiling.
+* Check Non-2xx before believing a load test. ab reports zero failures for a
+  thousand consecutive 404s.
 
 Still to do
 ===========
 
-* Run two instances behind a load balancer
-* Compare code generation strategies: random, hash, counter
 * Cache invalidation, once links can be deleted
-
-
-Running Multiple Instances of the app
-=====================================
+* X-Forwarded-For, so click analytics see real client IPs
