@@ -13,6 +13,8 @@ services:
   # v4
   redis:
     image: redis:7
+    environmnet:
+      REDIS_HOST: redis
     ports:
       - "6379:6379"
 

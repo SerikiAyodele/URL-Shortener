@@ -2,6 +2,7 @@ from flask import Flask
 from flask import request
 from flask import redirect
 from flask import abort
+from flask import render_template
 from dotenv import load_dotenv
 from psycopg_pool import ConnectionPool
 import secrets
@@ -13,7 +14,7 @@ load_dotenv()
 
 app = Flask(__name__)
 pool = ConnectionPool(os.environ["DATABASE_URL"])
-cache = redis.Redis(host="localhost", port=6379, decode_responses=True)
+cache = redis.Redis(host=os.environ.get("REDIS_HOST", "localhost"), port=6379, decode_responses=True)
 
 @app.route("/shorten", methods=["POST"])
 def shorten():
@@ -58,3 +59,7 @@ def get_code(code):
 @app.route("/ping")
 def ping():
     return "ok"
+
+@app.route("/")
+def home():
+    return render_template("index.html")
