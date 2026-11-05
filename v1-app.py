@@ -5,7 +5,7 @@ from flask import abort
 import secrets
 
 app = Flask(__name__)
-links = {}
+links = {} # python dictionary
 
 @app.route("/shorten", methods=["POST"])
 def shorten():

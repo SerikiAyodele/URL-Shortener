@@ -11,10 +11,10 @@ app = Flask(__name__)
 def shorten():
     data = request.get_json()
 
-    # 1a. reject the request if the url field is missing
+    # Fix 1a: reject the request if the url field is missing
     if "url" in data:
         
-        #open a connection
+        # Fix 2: open a connection
         conn = sqlite3.connect("links.db")
 
         while True:
