@@ -1,157 +1,96 @@
 URL Shortener
 =============
+This project takes a long URL and returns a short code. Visit the code on the internet, get redirected to the long URL.
 
-Takes a long URL, returns a short code. Visit the code, get redirected.
+Stack: Python, Flask, gunicorn, PostgreSQL 17, Redis 7, nginx, Docker Compose.
 
-Built to learn system design. Every change below fixes a problem found by
-measuring, not guessing. The build log is the point of this repo.
+![Architecture](architecture.png)
 
-Python, Flask, gunicorn, PostgreSQL 17, Redis 7, nginx, Docker Compose.
 
-Run it
-------
+To run it
+---------
+cp .env.example .env            # then set your own values
+docker compose up -d --build --scale app=3
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < schema.sql
 
-    cp .env.example .env            # then set your own values
-    docker compose up -d --build --scale app=3
-    docker compose exec -T postgres psql -U mia -d links < schema.sql
+UI at http://127.0.0.1:8080.
 
-UI at http://127.0.0.1:8080. Or POST JSON to /shorten with a "url" field.
 
-v1: in memory
--------------
+v1: Error's and collisions Handling
+------------------------------------
+Setup: This setup consist of two endpoints and a Python dictionary.
 
-Two endpoints, a Python dict, no database.
+Working: You send it a long URL, it gives you a short code. You visit that code, it sends you to the long URL.
 
-Problem: codes collide. token_urlsafe(4) gives 2^32 = 4.29 billion codes. At
-10 million links that is 0.23% each, so ~23,000 links silently pointing at
-the wrong site, with no error.
+* Problem 1a: Requests without the url field will return a `500`. Meaning our code broke, meanwhile what has actually happened is that the user has sent a bad request and they should get a `400` which means the client has sent a malformed request.
 
-Longer codes only reduce the odds. Checking gives a guarantee, and writes are
-rare, so paying on the write path is cheap.
+```
+# e.g. request says "link" instaed of "url" 
 
-Fix: retry on collision. The primary key does the checking.
+curl -X POST http://127.0.0.1:5001/shorten \
+-H "Content-Type: application/json" \
+-d '{"link": "https://example.com"}'
+```
+* Fix 1a: Logic added to reject a request if the url field is missing
 
-v2: it survives a restart
--------------------------
+* Problem 1b: Two links can end up with the same code.
+The `token_urlsafe(4)` function in the v1 code can make 4.29 billion different short codes. That sounds like plenty. But once 10 million codes are in use, each new code has a `0.23%` chance of the code already being taken. That is about 23,000 collisions. Collison here means two different links ending up with the same code.
 
-Problem: the dict died on every restart.
+* Fix 1b: When a code is already taken, make a new one and try again.
 
-Fix: SQLite. Code is the primary key, because every redirect arrives with a
-code and needs the URL, never the reverse. Long URLs are not unique and must
-not be: two people shortening google.com need different codes.
+* Problem 1c: If a user visits a code that does not exist in our DB, we return a `500`. We should instead return a `404` which is a *Not found* error code, meaning "We looked, it is not here". 
 
-Then: is the disk read slow enough to need a cache? Isolated it with /ping, a
-route touching no database. 856 req/sec against 817. Four percent apart, so
-SQLite was not the bottleneck. The dev server was.
+* Fix 1c: We add a check
 
-Fix: gunicorn, 4 workers. 817 to 6670 req/sec, not one line of app.py changed.
-WSGI is a standard interface, so servers swap freely.
+Fixes are implemented in `v2-app.py`
 
-Cache decision: no. The database cost 0.22ms of a 1.50ms request.
 
-v3: it can run on more than one machine
----------------------------------------
+v2: Storing the short codes in memory
+--------------------------------------
+Setup: This setup consist of same two endpoints and a Python dictionary. but this time with fixes to issues pointed out in v1
 
-Problem: SQLite coordinates writers with operating system file locks, which
-only works while every process asks the same operating system. On a network
-share, two machines each believe they hold the lock. Both write. The file
-corrupts, silently.
+* Problem with v2: Codes still live in the app memory, if there is an app restart that data will be lost
 
-    SQLite     many processes, one machine
-    Postgres   many processes, many machines
+* Fix: Add a DB, SQLite
 
-Fix: Postgres. Four changes, the SQL unchanged.
+Fix is implemented in `v3-app.py`
 
-    sqlite3.connect("links.db")  ->  psycopg.connect(DATABASE_URL)
-    ?                            ->  %s
-    sqlite3.IntegrityError       ->  psycopg.errors.UniqueViolation
 
-Cost: the database went from 0.22ms to 10.9ms. Fifty times more, same query.
+v3: Making it survive a restart
+-------------------------------
+Setup: In v2 the dictionary died on every restart , we fixed this in v3 by introducing SQLite, which keeps the links in a file on disk, so a restart no longer wipes them.
 
-The query or the connection? psycopg.connect() sat inside the function, so
-every request paid a TCP handshake plus authentication for a 1ms query.
+Database Design: The code is the primary key, because every that's what a user types in and their expected result is a long url so the DB is built around that.
 
-Fix: a connection pool, opened once at startup. 825 to 3759 req/sec for moving
-one line out of a function. No new service.
+* Problem 3: SQLite only works on one machine. It stops two writers clashing by locking the file through the operating system, and that only works while both are on the same machine asking the same file. What if the writers are on different machines?
 
-v4: the cache
--------------
+* Fix 3: We swap SQLite for postgres 
+With SQLite, every copy of your app opens `links.db` itself. Two copies on two machines open the same file and both write to it.
 
-The database was now 1.39ms of a 2.66ms request. Added Redis to learn the
-pattern, not because the numbers demanded it.
+With Postgres, your app never opens a file. It sends the SQL over the network and Postgres does the writing. However many copies you run, only one program ever touches the data, so nothing clashes.
 
-Cache-aside: check Redis, on a miss query Postgres and store the answer. The
-cache knows nothing about the database. The app does the work.
+Fix is implemented in `v4-app.py`
 
-3759 to 5386 req/sec. 43%, not the 2x expected. Redis is also a separate
-process reached over TCP, so a Postgres trip became a shorter Redis one. A
-cache gives a shorter trip, not memory speed.
+v4: Running on more than one machine
+-------------------------------------
+Setup: Postgres replaces SQLite, with a connection pool and Redis in front.
 
-Caveat: ab hits one URL repeatedly, so that was a 100% hit rate. A miss is
-slower than no cache, since it checks Redis and still goes to Postgres.
+* Problem 4a: Postgres was slower. `0.22ms` to `10.9ms` for the same query, because `psycopg.connect()` sat inside the function and every request opened a brand new connection.
 
-Entries expire after an hour. That bounds staleness. It is not deletion.
+* Fix 4a: A connection pool. Connections open once at startup and get lent out. 825 to 3759 req/sec, for moving one line.
 
-v5: more than one copy
-----------------------
+* Problem 4b: The database was still half the request.
 
-No app code changed. All infrastructure.
+* Fix 4b: Check Redis first. If the code is there, Postgres is never touched.
+3759 to 5386 req/sec.
 
-Problem: --scale app=3 fails. Three containers, one host port.
 
-    Bind for 0.0.0.0:5001 failed: port is already allocated
+Running more than one copy
+---------------------------
+No app code changed, so there is no v5 file.
 
-Publishing three ports would "work", but a short link is a URL with one host.
-Whoever creates the link picks an address once, and every click lands on that
-copy. The thing choosing has to choose per request, not once.
+* Problem: All three containers wanted port 5001, and only one program can hold a port.
 
-Fix: stop publishing the app's port, put nginx in front on 8080. Docker's DNS
-returns all three IPs in rotating order, so the balancing is Docker's.
+* Fix: Stop publishing the app's port. Put nginx on 8080 and let it pick a copy for each request. 12 requests spread 3 / 3 / 6.
 
-Gotcha: nginx resolves an upstream name once at startup and caches it forever.
-A variable forces resolution per request.
-
-    set $backend http://app:5001;
-    proxy_pass $backend;
-
-12 requests spread 3 / 3 / 6. DNS round robin is approximate.
-
-What broke: nothing. State moved to Postgres in v3, so all three copies agree.
-The v1 dict would have 404'd every redirect landing on a different copy.
-
-What changed: the app sees nginx's IP, not the client's. Click analytics by
-country would report one country. The fix is X-Forwarded-For.
-
-Results
-=======
-
-ab -n 1000 -c 10, one laptop.
-
-                                       req/sec    per req
-    dev server + sqlite                    817     12.20ms
-    gunicorn + sqlite                     6670      1.50ms
-    gunicorn + postgres                    825     12.13ms
-    gunicorn + postgres + pool            3759      2.66ms
-    gunicorn + postgres + pool + redis    5386      1.90ms
-    /ping, the floor                      7855      1.27ms
-
-What this taught me
-===================
-
-* Measure before optimising. Twice I was sure the database was slow. Twice it
-  was not. One fix was a word in a command, the other moved one line.
-* To price something, add a route that does none of it and measure the gap.
-* Slow is relative to the work, not to a second. 150ms across continents is
-  fine. 11ms to return "ok" locally is not.
-* Watch p99. The average hides your worst users.
-* Fix the biggest bottleneck and the next becomes visible. Always was there.
-* A cache is a decision with a price, not a default.
-* Whatever all your copies must share becomes your ceiling.
-* Check Non-2xx before believing a load test. ab reports zero failures for a
-  thousand consecutive 404s.
-
-Still to do
-===========
-
-* Cache invalidation, once links can be deleted
-* X-Forwarded-For, so click analytics see real client IPs
+Nothing broke, because the data lives in Postgres and all three copies see the same links.
